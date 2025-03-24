@@ -2,7 +2,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
 # Replace with your NEW secure bot token
-BOT_TOKEN = "7961512087:AAFneG_e_irwukt3IcpFZQSNj2_OQQHF0QM"
+BOT_TOKEN = "Your Token"
 
 # Sample menu data with descriptions and images
 MENU = {
