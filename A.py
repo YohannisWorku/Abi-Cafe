@@ -5,7 +5,7 @@ import requests
 import random
 
 # Replace with your NEW secure bot token
-BOT_TOKEN = "8002497785:AAFoNvuv5Kk9raijZNhZ9zlTC-Bh30OTTsY"
+BOT_TOKEN = "Your token"
 
 # Sample image source (e.g., Unsplash API or similar free image sources)
 IMAGE_API_URL = "https://picsum.photos/600/400"
