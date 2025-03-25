@@ -3,6 +3,9 @@ from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandle
 
 # Replace with your NEW secure bot token
 BOT_TOKEN = "7961512087:AAFneG_e_irwukt3IcpFZQSNj2_OQQHF0QM"
+ADMIN_ID = 6472125371  # Replace with your Telegram ID
+USER_LIST = set()  # Stores all active user chat IDs
+
 
 # Sample menu data with descriptions and images
 MENU = {
@@ -30,6 +33,13 @@ DELIVERY_TIMES = {
 # Store user orders and details
 USER_ORDERS = {}
 USER_DETAILS = {}
+# save data function
+def save_data():
+    data = {
+        "USER_ORDERS": USER_ORDERS or {},
+        "USER_DETAILS": USER_DETAILS or {}
+    }
+    
 
 # Build the main menu keyboard
 def build_menu_keyboard():
@@ -54,6 +64,9 @@ def build_items_keyboard(category):
 
 # Start Command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    chat_id = update.message.chat_id
+    USER_LIST.add(chat_id)  # Track each user who starts the bot
+
     await update.message.reply_text(
         "🍴 Welcome to the Abi Cafe! Browse our delicious menu below:",
         reply_markup=build_menu_keyboard()
@@ -124,29 +137,47 @@ async def checkout(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text("🛒 Your cart is empty. Add some items first!")
         return
 
-    total_price = sum([item['price'] for category in MENU for item in MENU[category] if item['name'] in cart_items])
-    
-    USER_DETAILS[chat_id] = {"total_price": total_price}
-    
+    total_price = sum(
+        [item['price'] for category in MENU for item in MENU[category] if item['name'] in cart_items]
+    )
+
+    # Ensure all required keys are initialized
+    USER_DETAILS[chat_id] = {
+        "name": None,
+        "phone": None,
+        "items": cart_items,
+        "total_price": total_price
+    }
+
+    save_data()  # Save data after initializing USER_DETAILS
     await update.message.reply_text("📝 Please provide your **Name** to confirm your order.")
+
+
 
 # Collect User Details
 async def handle_user_details(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = update.message.chat_id
     text = update.message.text.strip()
 
-    if "name" not in USER_DETAILS[chat_id]:
+    # Ensure USER_DETAILS entry exists before modifying it
+    if chat_id not in USER_DETAILS:
+        USER_DETAILS[chat_id] = {"name": None, "phone": None, "items": [], "total_price": 0}
+
+    if not USER_DETAILS[chat_id].get("name"):
         USER_DETAILS[chat_id]["name"] = text
+        save_data()  # Save after storing name
         await update.message.reply_text("📞 Now, please provide your **Phone Number**.")
         return
 
-    if "phone" not in USER_DETAILS[chat_id]:
+    if not USER_DETAILS[chat_id].get("phone"):
         USER_DETAILS[chat_id]["phone"] = text
-        
+        save_data()  # Save after storing phone number
+
+        # Order Summary
         name = USER_DETAILS[chat_id]["name"]
         phone = USER_DETAILS[chat_id]["phone"]
         total_price = USER_DETAILS[chat_id]["total_price"]
-        cart_items = USER_ORDERS.get(chat_id, [])
+        cart_items = USER_DETAILS[chat_id]["items"]
         cart_summary = "\n".join([f"✅ {item}" for item in cart_items])
 
         await update.message.reply_text(
@@ -158,17 +189,100 @@ async def handle_user_details(update: Update, context: ContextTypes.DEFAULT_TYPE
             f"🚚 Your order is on the way! Thank you for ordering with Abi Cafe. 🍔"
         )
 
-        USER_ORDERS[chat_id] = []
-        USER_DETAILS[chat_id] = {}
+
+# Admin Portal Command
+async def admin_portal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.message.chat_id != ADMIN_ID:
+        await update.message.reply_text("❌ Access Denied. This command is for admins only.")
+        return
+
+    await update.message.reply_text(
+        "🛠️ **Admin Portal**\n"
+        "/view_orders - View all current orders\n"
+        "/clear_orders - Clear all orders\n"
+        "/announce <message> - Send an announcement to all users"
+    )
+
+# View Orders Command
+async def view_orders(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.message.chat_id != ADMIN_ID:
+        await update.message.reply_text("❌ Access Denied. This command is for admins only.")
+        return
+
+    if not USER_DETAILS:
+        await update.message.reply_text("📭 No active orders at the moment.")
+        return
+
+    order_summary = "**📋 All Current Orders:**\n\n"
+    for user_id, details in USER_DETAILS.items():
+        if details.get("items"):
+            name = details.get("name", "Unknown")
+            phone = details.get("phone", "Unknown")
+            total_price = details.get("total_price", 0)
+            cart_summary = "\n".join([f"✅ {item}" for item in details["items"]])
+
+            order_summary += (
+                f"👤 *Name:* {name}\n"
+                f"📞 *Phone:* {phone}\n"
+                f"🛒 *Items:* \n{cart_summary}\n"
+                f"💰 *Total:* Birr {total_price}\n"
+                "-----------------------------\n"
+            )
+
+    await update.message.reply_text(order_summary, parse_mode='Markdown')
+
+
+# Clear Orders Command
+async def clear_orders(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.message.chat_id != ADMIN_ID:
+        await update.message.reply_text("❌ Access Denied. This command is for admins only.")
+        return
+
+    USER_ORDERS.clear()
+    USER_DETAILS.clear()
+    await update.message.reply_text("✅ All orders have been cleared successfully.")
+
+async def announce(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.message.chat_id != ADMIN_ID:
+        await update.message.reply_text("❌ Access Denied. This command is for admins only.")
+        return
+
+    if not context.args:
+        await update.message.reply_text("❗ Usage: `/announce <your message>`")
+        return
+
+    announcement = "📢 **Announcement:** " + " ".join(context.args)
+
+    # Send the announcement to all known users
+    successful_deliveries = 0
+    failed_deliveries = 0
+
+    for user_id in USER_LIST:
+        try:
+            await context.bot.send_message(chat_id=user_id, text=announcement, parse_mode='Markdown')
+            successful_deliveries += 1
+        except Exception as e:
+            print(f"❗ Failed to send message to {user_id}: {e}")
+            failed_deliveries += 1
+
+    # Notify the admin about the broadcast status
+    await update.message.reply_text(
+        f"✅ Announcement sent successfully to {successful_deliveries} user(s).\n"
+        f"❌ Failed to deliver to {failed_deliveries} user(s)."
+    )
+
 
 if __name__ == "__main__":
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("cart", view_cart))
-    app.add_handler(CommandHandler("checkout", checkout))
+    app.add_handler(CommandHandler("checkout", checkout))  # Ensure this line matches the indentation
+    app.add_handler(CommandHandler("admin", admin_portal))
+    app.add_handler(CommandHandler("view_orders", view_orders))
+    app.add_handler(CommandHandler("clear_orders", clear_orders))
+    app.add_handler(CommandHandler("announce", announce))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_user_details))
-
     app.add_handler(CallbackQueryHandler(menu_navigation))
 
     print("Bot is running...")
